@@ -1,6 +1,7 @@
 #
 .micropico
 testing/*
+Blink_working/*
 
 
 # For PCBs designed using KiCad: https://www.kicad.org/

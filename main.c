@@ -3,9 +3,23 @@
 #include "hardware/clocks.h"
 #include "pio_code.pio.h"
 
-#define LED_PIN 20
-int LED_STATE = 0;
-float pi = 3.1415926;
+// PINCRTL_IN_BASE = 0 (bit 0 -> GIPO 0, bit 1 -> GPIO 1, ... bit 7 -> GPIO 7)
+#define IN_PIN_0 0
+
+//Latch Inputs (outputs for RP2040)
+#define OE 10
+#define LE 11
+
+//Counter Inputs (outputs for RP2040)
+#define CE 12
+#define TLCD 13
+#define PE 14
+#define MR 15
+
+//Trigger Input used for triggering from the RP2040
+#define TRIG 16
+
+
 
 int main() {
     
