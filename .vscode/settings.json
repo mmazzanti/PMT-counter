@@ -1,0 +1,8 @@
+{
+    "python.analysis.typeshedPaths": [
+        "~/.micropico-stubs/included"
+    ],
+    "python.analysis.extraPaths": [
+        "~/.micropico-stubs/included"
+    ]
+}
