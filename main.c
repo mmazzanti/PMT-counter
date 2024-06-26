@@ -91,16 +91,17 @@ void start_PMT_counter(PIO pio, uint sm, uint dma_chan, uint32_t *capture_buf, s
     pio_sm_set_enabled(pio, sm, false);
     // Need to clear _input shift counter_, as well as FIFO, because there may be
     // partial ISR contents left over from a previous run. sm_restart does this.
-    printf("clear FIFO, restart SM\n");
+
     pio_sm_clear_fifos(pio, sm);
     pio_sm_restart(pio, sm);
 
-    printf("Setup DMA\n");
+    // Configure the DMA to shift data from the PIO's RX FIFO to our buffer
     dma_channel_config c = dma_channel_get_default_config(dma_chan);
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, true);
     channel_config_set_dreq(&c, pio_get_dreq(pio, sm, false));
 
+    // Configure the DMA channel
     dma_channel_configure(dma_chan, &c,
         capture_buf,        // Destination pointer
         &pio->rxf[sm],      // Source pointer
@@ -108,7 +109,6 @@ void start_PMT_counter(PIO pio, uint sm, uint dma_chan, uint32_t *capture_buf, s
         true                // Start immediately
     );
 
-    //pio_sm_exec(pio, sm, pio_encode_wait_gpio(trigger_level, trigger_pin));
     pio_sm_set_enabled(pio, sm, true);
 }
 
@@ -123,10 +123,10 @@ static inline uint bits_packed_per_word(uint pin_count) {
 
 
 int main() {
-    
     // Init all GPIO ports needed (not sure this part of the code is needed...)
     init_pins();
     stdio_init_all();
+
     printf("--- PMT counter ---\n");
 
     PIO pio = pio0;
@@ -141,6 +141,8 @@ int main() {
         int EXP_TIME = 0;
         char str[5];
         char* init_str = "INIT";
+        
+        // DEBUG: Slow down board for debugging
         float div = (float)clock_get_hz(clk_sys) / 2000;
 
         while (!init_ready)

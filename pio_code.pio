@@ -6,7 +6,7 @@
 
 .wrap_target
 start:
-    set pins, 16        ; Reset(LE-> L, ~CE-> L, TLCD-> L, ~PE->0, MR-> H = 00001)
+    set pins, 16        ; Reset(LE-> L, ~CE-> L, TLCD-> L, ~PE->L, MR-> H = 00001)
     set pins, 10        ; Counter hold(LE-> L, ~CE-> H, TLCD-> L, ~PE->H, MR-> L = 01010)
     wait 1 gpio 16      ; wait for PMT trigger (from FPGA)
 integrate:
