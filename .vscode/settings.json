@@ -4,5 +4,11 @@
     ],
     "python.analysis.extraPaths": [
         "~/.micropico-stubs/included"
-    ]
+    ],
+    "files.associations": {
+        "bus_ctrl.h": "c",
+        "string.h": "c",
+        "cstdint": "c",
+        "pio.h": "c"
+    }
 }

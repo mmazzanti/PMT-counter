@@ -1,0 +1,60 @@
+.program PMTcounter
+.side_set 1 opt
+
+; Turn on LED for 100 cycles and off for 100 cycles.
+; At 2 kHz, this will toggle pin at 10 Hz (200 cycles / 2000 Hz = 0.1 sec)
+
+.wrap_target
+start:
+    set pins, 16        ; Reset(LE-> L, ~CE-> L, TLCD-> L, ~PE->0, MR-> H = 00001)
+    set pins, 10        ; Counter hold(LE-> L, ~CE-> H, TLCD-> L, ~PE->H, MR-> L = 01010)
+    wait 1 gpio 16      ; wait for PMT trigger (from FPGA)
+integrate:
+    set pins, 8         ; Start counter(LE-> L, ~CE-> L, TLCD-> L, ~PE->H, MR-> L = 00010)
+    in pins, 8          ; Reads the latch (we use one integration cycle to read the last latched value)
+    nop         [7]    ; Wait 9 cycles (1 nop + 7 wait + 1 IN instruction for readout, this is now harcoded feel free to change it)
+    set pins, 11        ; Counter hold + latching(LE-> H, ~CE-> H, TLCD-> L, ~PE->H, MR-> L = 11010)
+    jmp integrate side 1; Start new acquisition & reset
+.wrap
+
+% c-sdk {
+
+// Helper function (for use in C program) to initialize this PIO program
+void PMTcounter_program_init(PIO pio, uint sm, uint offset, uint IN_pin_base, uint NpinsIN, uint OUT_pin_base, uint NpinsOUT, uint base_set, uint N_set_pins, uint base_sideset, uint word_size, float div) {
+
+    pio_sm_config c = PMTcounter_program_get_default_config(offset);
+
+    // --- SET OUT PINS ---
+    for(uint i=OUT_pin_base; i<OUT_pin_base+NpinsOUT; i++) {
+        pio_gpio_init(pio, i);
+    }
+    pio_gpio_init(pio, OUT_pin_base);
+
+    // --- SET SET PINS ---
+    sm_config_set_set_pins(&c, base_set, 5);
+
+    // --- SET SIDESET PINS ---
+    pio_sm_set_sideset_pins(pio, sm, base_sideset);
+
+    pio_sm_set_consecutive_pindirs(pio, sm, OUT_pin_base, NpinsOUT, true);
+
+    // --- SET IN PINS ---
+    pio_sm_set_in_pins (pio, sm, IN_pin_base);
+    pio_sm_set_consecutive_pindirs(pio, sm, IN_pin_base, NpinsIN, false);
+
+  
+
+    //sm_config_set_wrap(&c, offset, offset);
+
+    // --- SET CLK DIV ---
+    sm_config_set_clkdiv(&c, div);
+
+    // Note that we may push at a < 32 bit threshold if pin_count does not
+    // divide 32. We are using shift-to-right, so the sample data ends up
+    // left-justified in the FIFO in this case, with some zeroes at the LSBs.
+    sm_config_set_in_shift(&c, true, true, word_size);
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+    pio_sm_init(pio, sm, offset, &c);
+}
+
+%}

@@ -24,7 +24,7 @@ pico_generate_pio_header(${PROJECT_NAME}
 )
 
 # Link the Project to an extra library (pico_stdlib)
-target_link_libraries(${PROJECT_NAME} pico_stdlib hardware_pio)
+target_link_libraries(${PROJECT_NAME} pico_stdlib hardware_pio hardware_dma)
 
 # Enable usb output, disable uart output
 pico_enable_stdio_usb(${PROJECT_NAME} 1)
@@ -32,3 +32,5 @@ pico_enable_stdio_uart(${PROJECT_NAME} 0)
 
 # Create map/bin/hex/uf2 files
 pico_add_extra_outputs(${PROJECT_NAME})
+
+configure_file(build/PMT-Counter.uf2 ../release/PMT-Counter.uf2 COPYONLY)

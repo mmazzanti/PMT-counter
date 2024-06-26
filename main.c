@@ -1,10 +1,22 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include "pico/stdlib.h"
 #include "hardware/pio.h"
 #include "hardware/clocks.h"
 #include "pio_code.pio.h"
 
+
+#include "hardware/dma.h"
+#include "hardware/structs/bus_ctrl.h"
+
+
 // PINCRTL_IN_BASE = 0 (bit 0 -> GIPO 0, bit 1 -> GPIO 1, ... bit 7 -> GPIO 7)
 #define IN_PIN_0 0
+#define CAPTURE_PIN_COUNT 8
+
+#define SHIFT_REG_WIDTH 32
 
 //Latch Inputs (outputs for RP2040)
 #define OE 10
@@ -16,43 +28,185 @@
 #define PE 14
 #define MR 15
 
+//Counter Outpus (inputs for RP2040)
+#define COUT 8
+#define TC 9
+
 //Trigger Input used for triggering from the RP2040
 #define TRIG 16
 
+#define MAX_MEMORY 249836
+
+
+
+
+void init_pins(){
+    //Set the direction of the pins
+
+    gpio_init(OE);
+    gpio_set_dir(OE, GPIO_OUT);
+    gpio_put(OE, 1); // Set latch output in high impedance state at booting
+    gpio_init(LE);
+    gpio_set_dir(LE, GPIO_OUT);
+    gpio_init(CE);
+    gpio_set_dir(CE, GPIO_OUT);
+    gpio_init(TLCD);
+    gpio_set_dir(TLCD, GPIO_OUT);
+    gpio_init(PE);
+    gpio_set_dir(PE, GPIO_OUT);
+    gpio_init(MR);
+    gpio_set_dir(MR, GPIO_OUT);
+    gpio_init(TRIG);
+    gpio_set_dir(TRIG, GPIO_OUT);
+    for (int i = 0; i < 8; i++){
+        gpio_init(IN_PIN_0 + i);
+        gpio_set_dir(IN_PIN_0 + i, GPIO_IN);
+    }
+    sleep_ms(1000); // After 1s the board is ready
+    gpio_put(OE, 0); // Remove high impedance state from latch outputs
+}
+
+void print_capture_buf(const uint32_t *buf, uint32_t n_samples, uint32_t n_pins) {
+    printf("Acquired Data:\n");
+    // Store data in data array (each 32 bits we have n_pins words of data)
+    uint32_t num_words = 32/n_pins;
+    uint32_t data_arr[num_words];
+    for (int i = 0; i < num_words; i++) {
+        data_arr[i] = 0;
+    }
+
+    for (int sample = 0; sample < n_samples; ++sample) {
+        // Each array element contains 4 datasets, one for each 8-bit word
+        for (int i = 0; i < num_words; i++) {
+            data_arr[i] = (buf[sample] >> (32-n_pins*(i+1))) & 0xff;
+            // For debugging purposes
+            //printf("DATA: %d\n", buf[sample]);
+            printf("Bin: %d , Counts[%d] = %d\n", sample*num_words+i, i ,data_arr[i]);
+        }
+        printf("END OF DATA\n");
+        }
+}
+
+void start_PMT_counter(PIO pio, uint sm, uint dma_chan, uint32_t *capture_buf, size_t capture_size_words, uint trigger_pin, bool trigger_level) {
+    pio_sm_set_enabled(pio, sm, false);
+    // Need to clear _input shift counter_, as well as FIFO, because there may be
+    // partial ISR contents left over from a previous run. sm_restart does this.
+    printf("clear FIFO, restart SM\n");
+    pio_sm_clear_fifos(pio, sm);
+    pio_sm_restart(pio, sm);
+
+    printf("Setup DMA\n");
+    dma_channel_config c = dma_channel_get_default_config(dma_chan);
+    channel_config_set_read_increment(&c, false);
+    channel_config_set_write_increment(&c, true);
+    channel_config_set_dreq(&c, pio_get_dreq(pio, sm, false));
+
+    dma_channel_configure(dma_chan, &c,
+        capture_buf,        // Destination pointer
+        &pio->rxf[sm],      // Source pointer
+        capture_size_words, // Number of transfers
+        true                // Start immediately
+    );
+
+    //pio_sm_exec(pio, sm, pio_encode_wait_gpio(trigger_level, trigger_pin));
+    pio_sm_set_enabled(pio, sm, true);
+}
+
+// From RP docs, use this function to determine the size of the allocated memory in case of Npins !=8
+static inline uint bits_packed_per_word(uint pin_count) {
+    // If the number of pins to be sampled divides the shift register size, we
+    // can use the full SR and FIFO width, and push when the input shift count
+    // exactly reaches 32. If not, we have to push earlier, so we use the FIFO
+    // a little less efficiently.
+    return SHIFT_REG_WIDTH - (SHIFT_REG_WIDTH % pin_count);
+}
 
 
 int main() {
     
-    gpio_init(LED_PIN);
-    gpio_set_dir(LED_PIN, GPIO_OUT);
+    // Init all GPIO ports needed (not sure this part of the code is needed...)
+    init_pins();
     stdio_init_all();
+    printf("--- PMT counter ---\n");
 
-    static const uint led_pin = 25;
-    static const float pio_freq = 2000;
-
-    // Choose PIO instance (0 or 1)
     PIO pio = pio0;
+    uint sm = 0;
+    uint dma_chan = 0;
 
-    // Get first free state machine in PIO 0
-    uint sm = pio_claim_unused_sm(pio, true);
+    uint offset = pio_add_program(pio, &PMTcounter_program);
+    // Beginning of the experiment
+    while(true){
+        bool init_ready = false;
+        int N_SAMPLES = 0;
+        int EXP_TIME = 0;
+        char str[5];
+        char* init_str = "INIT";
+        float div = (float)clock_get_hz(clk_sys) / 2000;
 
-    // Add PIO program to PIO instruction memory. SDK will find location and
-    // return with the memory offset of the program.
-    uint offset = pio_add_program(pio, &blink_program);
+        while (!init_ready)
+        {   
+            while (strcmp(str, "INIT")!=0){
+                printf("Type INIT to start\n");
+                scanf("%s", str);
+            }
 
-    // Calculate the PIO clock divider
-    float div = (float)clock_get_hz(clk_sys) / pio_freq;
+            printf("N of samples:\n");
+            scanf("%d", &N_SAMPLES);
+            if (N_SAMPLES <= MAX_MEMORY)
+            {
+                init_ready = true;
+            }
+            else
+            {
+                init_ready = false;
+                printf("ERR: The number of bins exceeds the size of memory! Choose a lower number\n");
+                continue;
+            }
 
-    // Initialize the program using the helper function in our .pio file
-    blink_program_init(pio, sm, offset, led_pin, div);
+            printf("Bin time (units of 1/125MHz) [0-32]:\n");
+            scanf("%d", &EXP_TIME);
+            if (EXP_TIME >= 0 && EXP_TIME <= 32)
+            {
+                init_ready = true;
+            }
+            else
+            {
+                printf("ERR: Invalid bin time\n");
+                init_ready = false;
+            }
+        }
+        init_ready = false;
+        printf("N_SAMPLES = %d\n", N_SAMPLES);
+        printf("EXP_TIME = %d\n", EXP_TIME);
 
-    // Start running our PIO program in the state machine
-    pio_sm_set_enabled(pio, sm, true);
+        printf("Allocate memory\n");
+        // Allocate memory for the capture buffer
+        uint total_sample_bits = N_SAMPLES * CAPTURE_PIN_COUNT;
+        total_sample_bits += SHIFT_REG_WIDTH - 1;
+        uint buf_size_words = total_sample_bits / SHIFT_REG_WIDTH ;
+        uint32_t *capture_buf = malloc(buf_size_words * sizeof(uint32_t));
+        hard_assert(capture_buf);
+        if (capture_buf == NULL) {
+            printf("ERR: Error in memory allocation, restart the device and report the issue.\n");
+            exit(0);
+        }
+        printf("Set DMA priority\n");
+        // Grant high bus priority to the DMA, so it can shove the processors out
+        // of the way. This should only be needed if you are pushing things up to
+        // >16bits/clk here, i.e. if you need to saturate the bus completely.
+        bus_ctrl_hw->priority = BUSCTRL_BUS_PRIORITY_DMA_W_BITS | BUSCTRL_BUS_PRIORITY_DMA_R_BITS;
+        // Use PIO 0 SM 0
+        
+        //PMTcounter_program_init(pio, sm, offset, 0, 9, 10, 6, 10, 6, 12 , SHIFT_REG_WIDTH, 1.f);
+        //PMTcounter_program_init(PIO pio, uint sm, uint offset, uint IN_pin_base, uint NpinsIN, uint OUT_pin_base, uint NpinsOUT, uint base_set, uint N_set_pins, uint base_sideset, uint word_size, float div)
+        PMTcounter_program_init(pio, sm, offset, IN_PIN_0, 9, OE, 6, LE, 5, MR , SHIFT_REG_WIDTH, div);//1.f);
+        start_PMT_counter(pio, sm, dma_chan, capture_buf, buf_size_words, TRIG, true);
+        dma_channel_wait_for_finish_blocking(dma_chan);
+        //printf("malloced %d words for capture buffer\n", buf_size_words);
+        //printf("Capture buffer malloced at %04x \n", capture_buf);
+        print_capture_buf(capture_buf, buf_size_words, CAPTURE_PIN_COUNT);
 
-    // Do nothing
-    while (true) {
-        printf("Hello World From Pi Pico USB CDC\n");
-        printf("Pi Value = %f\n", pi);
-        sleep_ms(100);
+        //Free memory after experiment
+        free(capture_buf);
     }
 }
