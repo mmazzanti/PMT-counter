@@ -3,6 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 
+
 #include "pico/stdlib.h"
 #include "hardware/pio.h"
 #include "hardware/clocks.h"
@@ -48,7 +49,7 @@ void init_pins()
 
     gpio_init(OE);
     gpio_set_dir(OE, GPIO_OUT);
-    gpio_put(OE, 1); // Set latch output in high impedance state at booting
+    gpio_put(OE, 0); // Set latch output in high impedance state at booting
     gpio_init(LE);
     gpio_set_dir(LE, GPIO_OUT);
     gpio_init(CE);
@@ -75,23 +76,17 @@ void print_capture_buf(const uint32_t *buf, uint32_t n_samples, uint32_t n_pins)
     printf("Acquired Data:\n");
     // Store data in data array (each 32 bits we have n_pins words of data)
     uint32_t num_words = 32 / n_pins;
-    uint32_t data_arr[num_words];
-    for (int i = 0; i < num_words; i++)
-    {
-        data_arr[i] = 0;
-    }
-
     for (int sample = 0; sample < n_samples; ++sample)
     {
-        // Each array element contains 4 datasets, one for each 8-bit word
         for (int i = 0; i < num_words; i++)
         {
-            data_arr[i] = (buf[sample] >> (32 - n_pins * (i + 1))) & 0xff;
-            // For debugging purposes
-            // printf("DATA: %d\n", buf[sample]);
-            printf("Bin: %d , Counts[%d] = %d\n", sample * num_words + i, i, data_arr[i]);
+            if (i == 0 && sample == 0)
+            {
+                // Skip first count as it was the previous data (we read the data while integrating the counts)
+                continue;
+            }
+            printf("%d, %d\n", sample * num_words + i, (buf[sample] >> (n_pins * (i))) & 0xff);
         }
-        printf("END OF DATA\n");
     }
 }
 
@@ -109,7 +104,7 @@ void start_PMT_counter(PIO pio, uint sm, uint dma_chan, uint32_t *capture_buf, s
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, true);
     channel_config_set_dreq(&c, pio_get_dreq(pio, sm, false));
-
+    printf("Capture words: %d\n", capture_size_words);
     // Configure the DMA channel
     dma_channel_configure(dma_chan, &c,
                           capture_buf,        // Destination pointer
@@ -131,8 +126,28 @@ static inline uint bits_packed_per_word(uint pin_count)
     return SHIFT_REG_WIDTH - (SHIFT_REG_WIDTH % pin_count);
 }
 
+bool check_binning_range(int val){
+    if (!(val > 0 && val <= MAX_MEMORY))
+        {
+            printf("ERR: The number of bins is not correct, do not exceed memory limits of %d\n", MAX_MEMORY);
+            return false;
+        }
+    return true;
+
+}
+
+bool check_exp_time(int val){
+    if (!(val >= 0 && val <= 32))
+        {
+            printf("ERR: Invalid bin time\n");
+            return false;
+        }
+    return true;
+}
+
 bool process_cmd(uint input_case) {
     uint val;
+    
     switch (input_case) {
     case 0:
         if (0 == strncmp(cmd, "INIT", 4)) {
@@ -145,9 +160,8 @@ bool process_cmd(uint input_case) {
     case 1:
         // Getting N_SAMPLES
         val = strtol(cmd, NULL, 10);
-        if (!(val > 0 && val <= MAX_MEMORY))
+        if (check_binning_range(val))
         {
-            printf("ERR: The number of bins exceeds the size of memory! Choose a lower number\n");
             return false;
         }
         N_SAMPLES = val;
@@ -155,13 +169,37 @@ bool process_cmd(uint input_case) {
     case 2:
         // Getting EXP_TIME
         val = strtol(cmd, NULL, 10);
-        if (!(val >= 0 && val <= 32))
+        if (check_exp_time(val))
         {
-            printf("ERR: Invalid bin time\n");
             return false;
         }
         EXP_TIME = val;
         return true;
+    case 3:
+        if (0 == strncmp(cmd, "SET ", 4)) {
+            int tmp;
+            char* rest = cmd;
+            strtok_r(rest, " ", &rest);
+            tmp = atoi(strtok_r(rest, " ", &rest));
+            if (!check_binning_range(tmp))
+            {
+                return false;
+            }
+            N_SAMPLES = tmp;
+            printf("NSAMPLES: %d", tmp);
+            tmp = atoi(strtok_r(rest, " ", &rest));
+            if (!check_exp_time(tmp))
+            {
+                return false;
+            }
+            EXP_TIME = tmp;
+            printf("EXPTIME: %d", tmp); 
+            return true;
+        } else {
+            printf("ERR: Unknown command\n");
+            return false;
+        }
+        break;
     default:
         printf("Unknown command\n");
         return false;
@@ -197,10 +235,17 @@ void readCmd(void) {
 }
 
 void read_input_config(uint *N_SAMPLES, uint *EXP_TIME) {
-    printf("Type INIT to start:\n");
+    //printf("Type INIT to start:\n");
     readCmd();
+    if(process_cmd(3)){ //Speed command, set both N_SAMPLES and EXP_TIME
+        return;
+    }
     while (!process_cmd(0)){
-        printf("Type INIT to start:\n");
+        // Might be a SET command
+        if (process_cmd(3)){
+            return;
+        }
+        printf("Type INIT or SET to start:\n");
         readCmd();
     }
     printf("N of samples:\n");
@@ -221,8 +266,9 @@ void read_input_config(uint *N_SAMPLES, uint *EXP_TIME) {
 int main()
 {
     // Init all GPIO ports needed (not sure this part of the code is needed...)
-    init_pins();
     stdio_init_all();
+    init_pins();
+    
 
     printf("--- PMT counter ---\n");
 
@@ -233,11 +279,12 @@ int main()
     uint offset = pio_add_program(pio, &PMTcounter_program);
 
     // DEBUG: Slow down board for debugging
-    float div = (float)clock_get_hz(clk_sys) / 2000;
+    //float div = (float)clock_get_hz(clk_sys) / 50000000;
 
     // Beginning of the experiment
     while (true)
     {
+        //int dma_chan = dma_claim_unused_channel(true);
         // Read user settings (EXP_TIME atm not used)
         read_input_config(&N_SAMPLES, &EXP_TIME);
 
@@ -251,6 +298,12 @@ int main()
         uint buf_size_words = total_sample_bits / SHIFT_REG_WIDTH;
         uint32_t *capture_buf = malloc(buf_size_words * sizeof(uint32_t));
         hard_assert(capture_buf);
+        // Clear the buffer
+        for (int i = 0; i < buf_size_words; i++)
+        {
+            capture_buf[i] = 0;
+        }
+
         if (capture_buf == NULL)
         {
             printf("ERR: Error in memory allocation, restart the device and report the issue.\n");
@@ -262,18 +315,14 @@ int main()
         // >16bits/clk here, i.e. if you need to saturate the bus completely.
         bus_ctrl_hw->priority = BUSCTRL_BUS_PRIORITY_DMA_W_BITS | BUSCTRL_BUS_PRIORITY_DMA_R_BITS;
         // Use PIO 0 SM 0
-
-        // PMTcounter_program_init(pio, sm, offset, 0, 9, 10, 6, 10, 6, 12 , SHIFT_REG_WIDTH, 1.f);
-        // PMTcounter_program_init(PIO pio, uint sm, uint offset, uint IN_pin_base, uint NpinsIN, uint OUT_pin_base, uint NpinsOUT, uint base_set, uint N_set_pins, uint base_sideset, uint word_size, float div)
-        PMTcounter_program_init(pio, sm, offset, IN_PIN_0, 9, OE, 6, LE, 5, MR, SHIFT_REG_WIDTH, div); // 1.f);
+        PMTcounter_program_init(pio, sm, offset, IN_PIN_0, 9, OE, 6, LE, 5, MR, SHIFT_REG_WIDTH, 1.f); // 1.f);
         start_PMT_counter(pio, sm, dma_chan, capture_buf, buf_size_words, TRIG, true);
         dma_channel_wait_for_finish_blocking(dma_chan);
         // Disable PIO state machine
         pio_sm_set_enabled(pio, sm, false);
-        // printf("malloced %d words for capture buffer\n", buf_size_words);
-        // printf("Capture buffer malloced at %04x \n", capture_buf);
         print_capture_buf(capture_buf, buf_size_words, CAPTURE_PIN_COUNT);
         // Free memory after experiment
+        //irq_clear(pio_get_dreq(pio, sm, false));
         free(capture_buf);
     }
 }

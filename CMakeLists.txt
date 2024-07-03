@@ -33,4 +33,4 @@ pico_enable_stdio_uart(${PROJECT_NAME} 0)
 # Create map/bin/hex/uf2 files
 pico_add_extra_outputs(${PROJECT_NAME})
 
-configure_file(build/PMT-Counter.uf2 ../release/PMT-Counter.uf2 COPYONLY)
+#configure_file(build/PMT-Counter.uf2 ../release/PMT-Counter.uf2 COPYONLY)
