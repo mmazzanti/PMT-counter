@@ -2,13 +2,13 @@
 
 A PCB board for counting pulses up to ~1.5GHz.
 
-- Primary power $\left[5.5-20\right]\,\rm{V}$ @ $\lt 1500\,\rm{mA}$ (as low as $\approx 500\,\rm{mA}$ when not using the board to power the PMT). 
-- Compatible with $\pm 15\,\rm{V}$ [[Toptica_rack_power.pdf | Toptica]] racks
+- Primary power [5.5 - 20]V @ 1500mA (as low as $\approx$ 500 mA when not using the board to power the PMT). 
+- Compatible with $\pm$ 15V [[Toptica_rack_power.pdf | Toptica]] racks
 - Impedance matched traces
 - External trigger and reset option
 - USB-C powered for debugging and testing
 - Main power off switch
-- Additional 5V external power (up to $\sim 1\,\rm{A}$) for PMT (or similar) powering (to avoid ground loops between PMT and board)
+- Additional 5V external power (up to $\sim$ 1 A) for PMT (or similar) powering (to avoid ground loops between PMT and board)
 
 ## Why this project?
 
@@ -29,7 +29,7 @@ The board is based on a ECL 8-Bit Synchronous Binary Counter [MC100EP016A](https
 Counts from the binary counter are translated to LVTTL and latched on [sn74lvc574a](https://www.ti.com/lit/ds/symlink/sn74lvc574a.pdf) octal edge-triggered flip-flop.
 Flip-flop counts are read by a (incredibly powerful) microcontroller [Raspberry Pico](https://www.raspberrypi.com/products/raspberry-pi-pico/). I cannot state enough how versatile and powerful is the Pico, 8 state machines, 26xGPIO, DMA, 3xADCs, etc... all that with a price of 4€ 😮.
 
-|    ![Board_Front](docs/img/board_front.png)     |
+|    ![Board_Front](docs/img/Board_front.png)     |
 | :------------------------------------: |
 | Figure 1 - Front side of the PMT board |
 
