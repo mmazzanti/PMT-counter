@@ -11377,6 +11377,15 @@
 				(hide yes)
 			)
 		)
+		(property "JLC Part" "C1591"
+			(at 19.05 27.94 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "f3a0ac20-a9c5-411a-9035-a399b5732c54")
 		)
@@ -12176,6 +12185,15 @@
 			)
 		)
 		(property "Description" "Resistor"
+			(at 30.48 27.94 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC Part" "C170049"
 			(at 30.48 27.94 0)
 			(effects
 				(font

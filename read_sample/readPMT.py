@@ -56,9 +56,12 @@ def set_exposure(serial, exposure):
 
 def read_string(serial_port):
         serialString = serial_port.read(serial_port.in_waiting)
-        
+        #print(serialString)
+        print("---- END ----")
         # Print the contents of the serial data
         asciiString = serialString.decode("Ascii")
+        print("---- START ----")
+        print(asciiString)
         splittedSTR = asciiString.split("\r\n")
         #print(splittedSTR)
         if len(splittedSTR)>3:

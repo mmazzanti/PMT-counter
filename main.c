@@ -3,12 +3,15 @@
 #include <string.h>
 #include <ctype.h>
 
+//Speedup USB data retrieval
+//#include "tusb.h"
+//#include "bsp/board.h"
 
+// PIO and DMA
 #include "pico/stdlib.h"
 #include "hardware/pio.h"
 #include "hardware/clocks.h"
 #include "pio_code.pio.h"
-
 #include "hardware/dma.h"
 #include "hardware/structs/bus_ctrl.h"
 
@@ -20,7 +23,7 @@
 
 // Latch Inputs (outputs for RP2040)
 #define OE 10
-#define LE 11
+#define LE 11 // Technically called CLK in the datasheet, but LE is more descriptive and cannot be confused with the pulses clock
 
 // Counter Inputs (outputs for RP2040)
 #define CE 12
@@ -61,7 +64,7 @@ void init_pins()
     gpio_init(MR);
     gpio_set_dir(MR, GPIO_OUT);
     gpio_init(TRIG);
-    gpio_set_dir(TRIG, GPIO_OUT);
+    gpio_set_dir(TRIG, GPIO_IN);
     for (int i = 0; i < 8; i++)
     {
         gpio_init(IN_PIN_0 + i);
@@ -71,11 +74,23 @@ void init_pins()
     gpio_put(OE, 0); // Remove high impedance state from latch outputs
 }
 
-void print_capture_buf(const uint32_t *buf, uint32_t n_samples, uint32_t n_pins)
+void print_capture_buf(const uint32_t *buf, uint32_t n_samples, uint32_t n_pins, size_t buf_size_bytes)
 {
     printf("Acquired Data:\n");
     // Store data in data array (each 32 bits we have n_pins words of data)
     uint32_t num_words = 32 / n_pins;
+    printf("Buffer length: %d\r\n", buf_size_bytes);
+    printf("---- DATA ----\r\n");
+    //printf("%.*s", buf_size_bytes, buf);
+    //printf("Buffer size: %d, Buffer address: %x", buf_size_bytes, buf);
+    fflush(stdout);
+    int outcoume = fwrite(buf, sizeof(uint32_t), buf_size_bytes, stdout);
+    printf("Written: %x", outcoume);
+    printf("---- END DATA ----\r\n");
+    fflush(stdout);
+    // Old (slow) cout
+    //
+    /*
     for (int sample = 0; sample < n_samples; ++sample)
     {
         for (int i = 0; i < num_words; i++)
@@ -85,13 +100,15 @@ void print_capture_buf(const uint32_t *buf, uint32_t n_samples, uint32_t n_pins)
                 // Skip first count as it was the previous data (we read the data while integrating the counts)
                 continue;
             }
-            printf("%d, %d\n", sample * num_words + i, (buf[sample] >> (n_pins * (i))) & 0xff);
+            printf("%d, ",(buf[sample] >> (n_pins * (i))) & 0xff);
+
         }
-    }
+    }*/
 }
 
 void start_PMT_counter(PIO pio, uint sm, uint dma_chan, uint32_t *capture_buf, size_t capture_size_words, uint trigger_pin, bool trigger_level)
 {
+
     pio_sm_set_enabled(pio, sm, false);
     // Need to clear _input shift counter_, as well as FIFO, because there may be
     // partial ISR contents left over from a previous run. sm_restart does this.
@@ -104,7 +121,7 @@ void start_PMT_counter(PIO pio, uint sm, uint dma_chan, uint32_t *capture_buf, s
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, true);
     channel_config_set_dreq(&c, pio_get_dreq(pio, sm, false));
-    printf("Capture words: %d\n", capture_size_words);
+    printf("Capture words: %d\r\n", capture_size_words);
     // Configure the DMA channel
     dma_channel_configure(dma_chan, &c,
                           capture_buf,        // Destination pointer
@@ -129,7 +146,7 @@ static inline uint bits_packed_per_word(uint pin_count)
 bool check_binning_range(int val){
     if (!(val > 0 && val <= MAX_MEMORY))
         {
-            printf("ERR: The number of bins is not correct, do not exceed memory limits of %d\n", MAX_MEMORY);
+            printf("ERR: The number of bins is not correct, do not exceed memory limits of %d\r\n", MAX_MEMORY);
             return false;
         }
     return true;
@@ -139,7 +156,7 @@ bool check_binning_range(int val){
 bool check_exp_time(int val){
     if (!(val >= 0 && val <= 32))
         {
-            printf("ERR: Invalid bin time\n");
+            printf("ERR: Invalid bin time\r\n");
             return false;
         }
     return true;
@@ -153,7 +170,7 @@ bool process_cmd(uint input_case) {
         if (0 == strncmp(cmd, "INIT", 4)) {
             return true;
         } else {
-            printf("ERR: Unknown command\n");
+            printf("ERR: Unknown command\r\n");
             return false;
         }
         break;
@@ -196,12 +213,12 @@ bool process_cmd(uint input_case) {
             printf("EXPTIME: %d", tmp); 
             return true;
         } else {
-            printf("ERR: Unknown command\n");
+            printf("ERR: Unknown command\r\n");
             return false;
         }
         break;
     default:
-        printf("Unknown command\n");
+        printf("Unknown command\r\n");
         return false;
     }
 }
@@ -222,7 +239,7 @@ void readCmd(void) {
         }
         if (c == 0x0D) {
             cmd[idx] = 0;
-            printf("\n");
+            printf("\r\n");
             return;
         }
         if ((c >= 0x20) && (c <= 0x7E)) {
@@ -245,19 +262,19 @@ void read_input_config(uint *N_SAMPLES, uint *EXP_TIME) {
         if (process_cmd(3)){
             return;
         }
-        printf("Type INIT or SET to start:\n");
+        printf("Type INIT or SET to start:\r\n");
         readCmd();
     }
-    printf("N of samples:\n");
+    printf("N of samples:\r\n");
     readCmd();
     while(!process_cmd(1)){
         printf("N of samples:\n");
         readCmd();
     }
-    printf("Bin time (units of 1/125MHz) [0-32]:\n");
+    printf("Bin time (units of 1/125MHz) [0-32]:\r\n");
     readCmd();
     while(!process_cmd(2)){
-        printf("Bin time (units of 1/125MHz) [0-32]:\n");
+        printf("Bin time (units of 1/125MHz) [0-32]:\r\n");
         readCmd();
     }
 
@@ -267,19 +284,25 @@ int main()
 {
     // Init all GPIO ports needed (not sure this part of the code is needed...)
     stdio_init_all();
+    stdio_set_translate_crlf(&stdio_usb, false);
     init_pins();
+
+    //Init TinyUSB
+    tusb_init();
     
 
-    printf("--- PMT counter ---\n");
+    printf("--- PMT counter ---\r\n");
 
     PIO pio = pio0;
     uint sm = 0;
     uint dma_chan = 0;
 
+    uint test = 0;
+
     uint offset = pio_add_program(pio, &PMTcounter_program);
 
     // DEBUG: Slow down board for debugging
-    //float div = (float)clock_get_hz(clk_sys) / 50000000;
+    //float div = (float)clock_get_hz(clk_sys) / 1000000;
 
     // Beginning of the experiment
     while (true)
@@ -288,10 +311,10 @@ int main()
         // Read user settings (EXP_TIME atm not used)
         read_input_config(&N_SAMPLES, &EXP_TIME);
 
-        printf("N_SAMPLES = %d\n", N_SAMPLES);
-        printf("EXP_TIME = %d\n", EXP_TIME);
+        printf("N_SAMPLES = %d\r\n", N_SAMPLES);
+        printf("EXP_TIME = %d\r\n", EXP_TIME);
 
-        printf("Allocating memory\n");
+        printf("Allocating memory\r\n");
         // Allocate memory for the capture buffer
         uint total_sample_bits = N_SAMPLES * CAPTURE_PIN_COUNT;
         total_sample_bits += SHIFT_REG_WIDTH - 1;
@@ -306,23 +329,25 @@ int main()
 
         if (capture_buf == NULL)
         {
-            printf("ERR: Error in memory allocation, restart the device and report the issue.\n");
+            printf("ERR: Error in memory allocation, restart the device and report the issue.\r\n");
             exit(0);
         }
-        printf("Set DMA priority\n");
+        printf("Set DMA priority\r\n");
         // Grant high bus priority to the DMA, so it can shove the processors out
         // of the way. This should only be needed if you are pushing things up to
         // >16bits/clk here, i.e. if you need to saturate the bus completely.
         bus_ctrl_hw->priority = BUSCTRL_BUS_PRIORITY_DMA_W_BITS | BUSCTRL_BUS_PRIORITY_DMA_R_BITS;
         // Use PIO 0 SM 0
-        PMTcounter_program_init(pio, sm, offset, IN_PIN_0, 9, OE, 6, LE, 5, MR, SHIFT_REG_WIDTH, 1.f); // 1.f);
+        PMTcounter_program_init(pio, sm, offset, IN_PIN_0, 9, OE, 6, LE, 5, MR, SHIFT_REG_WIDTH, 1.f, EXP_TIME); // 1.f);
         start_PMT_counter(pio, sm, dma_chan, capture_buf, buf_size_words, TRIG, true);
         dma_channel_wait_for_finish_blocking(dma_chan);
         // Disable PIO state machine
+        printf("Run: %d\r\n", test);
         pio_sm_set_enabled(pio, sm, false);
-        print_capture_buf(capture_buf, buf_size_words, CAPTURE_PIN_COUNT);
+        print_capture_buf(capture_buf, buf_size_words, CAPTURE_PIN_COUNT, buf_size_words);
         // Free memory after experiment
         //irq_clear(pio_get_dreq(pio, sm, false));
         free(capture_buf);
+        test++;
     }
 }
