@@ -102,7 +102,8 @@ Increasing the integration time can be done by adding extra nop instructions eac
 
 ## How-to change the integration time (the noob way)
 
-** 21/08/24 This part is still work in progres and needs testing **
+**21/08/24 This part is still work in progres and needs testing**
+
 During initialization, we load the number of integration steps into the X scratch register, with a maximum value of 32. This limits the integration time to 32 multiplied by the number of NOP operations (for now the default is 8). The following code demonstrates the logic:
 
 ```PIO assembly
