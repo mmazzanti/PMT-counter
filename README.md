@@ -100,6 +100,35 @@ start:
 The source of deadtime are the first and last instructions (Start counter + Counter hold + latching) between the wrapped code. The amount of cycles during which the board will keep counting is given by the integration time (nop [7], 8 instructions in this case) + 1 readout (in pins, 8) + 1 equally spreaded between the raise time of (set pins, 8) and lowering time of (set pins, 27).
 Increasing the integration time can be done by adding extra nop instructions each of which can have up to 32 instructions of additional delay. 
 
+## How-to change the integration time (the noob way)
+
+** 21/08/24 This part is still work in progres and needs testing **
+During initialization, we load the number of integration steps into the X scratch register, with a maximum value of 32. This limits the integration time to 32 multiplied by the number of NOP operations (for now the default is 8). The following code demonstrates the logic:
+
+```PIO assembly
+start:
+    set pins, 16    ; Reset(LE-> L, ~CE-> L, TLCD-> L, ~PE->L, MR-> H = 00001)
+    set pins, 10    ; Counter hold(LE-> L, ~CE-> H, TLCD-> L, ~PE->H, MR-> L = 01010)
+    wait 1 gpio 16  ; wait for PMT trigger (from FPGA)
+    mov Y X         ; load the integration time from the X register
+.wrap_target
+    set pins, 8     ; Start counter(LE-> L, ~CE-> L, TLCD-> L, ~PE->H, MR-> L = 00010)
+    in pins, 8      ; Reads the latch (we use one integration cycle to read the last latched value)
+integrate:
+    nop [7]             ; Keeps integrating
+    jmp y-- integrate   ; as long as user requests (units of 7 clocks)
+    set pins, 27    ; Counter hold + latching(LE-> H, ~CE-> H, TLCD-> L, ~PE->H, MR-> H = 11011) Wait 1 cycle here as I suspect the latch might miss the OE signal
+.wrap
+```
+
+During each data acquisition step, we transfer the 32-bit word from the X scratch register to the Y scratch register. The board will then wait for a photon during this part of the code:
+
+```
+integrate:
+    nop [7]             ; Keeps integrating
+    jmp y-- integrate   ; as long as user requests (units of 7 clocks)
+```
+The user can easily set the number of integration steps [0 - 32] at runtime. However, adjusting to shorter or longer integration times requires fewer or more ```nop``` wait instructions. To achieve this, the PIO code needs to be modified and the project recompiled.
 
 
 
