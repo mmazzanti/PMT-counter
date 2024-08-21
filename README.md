@@ -25,7 +25,7 @@ Since technology never stops advancing, I designed the board to handle more than
 
 ## 1. PCB Board
 
-The board is based on a ECL 8-Bit Synchronous Binary Counter [MC100EP016A](https://www.onsemi.com/products/timing-logic-memory/clock-data-distribution/arithmetic-functions/mc100ep016a) with an operating frequency $\ge 1.3\,\rm{GHz}$.
+The board is based on a ECL 8-Bit Synchronous Binary Counter [MC100EP016A](https://www.onsemi.com/products/timing-logic-memory/clock-data-distribution/arithmetic-functions/mc100ep016a) with an operating frequency $\ge$ 1.3 GHz.
 Counts from the binary counter are translated to LVTTL and latched on [sn74lvc574a](https://www.ti.com/lit/ds/symlink/sn74lvc574a.pdf) octal edge-triggered flip-flop.
 Flip-flop counts are read by a (incredibly powerful) microcontroller [Raspberry Pico](https://www.raspberrypi.com/products/raspberry-pi-pico/). I cannot state enough how versatile and powerful is the Pico, 8 state machines, 26xGPIO, DMA, 3xADCs, etc... all that with a price of 4€ 😮.
 
@@ -34,7 +34,7 @@ Flip-flop counts are read by a (incredibly powerful) microcontroller [Raspberry 
 | Figure 1 - Front side of the PMT board |
 
 The PMT board features a dual powering system, one through USB-C on top that can be used for debugging or testing the board (this USB connection can be used only for powering) and a second one through a DIN41612_C_3x32 connector that can be used to power the board from a rack. The rack connection is compatible with Toptica racks however you can easily modify the 15V power source to match your rack system.
-As the main powering of the board comes from a TL1963AQKTTRQ1 LDO, any voltage between $\left[5.5-20\right]\,\rm{V}$ @ $\lt 1500\,\rm{mA}$, from the back panel connection, should work. The negative power connection is at the moment not used and can be ignored/removed.
+As the main powering of the board comes from a TL1963AQKTTRQ1 LDO, any voltage between [5.5-20]V @ 1500 mA, from the back panel connection, should work. The negative power connection is at the moment not used and can be ignored/removed.
 
 ## Trigger
 The RP2040 will initialize the board and wait for an external trigger to start counting the pulses from that specific moment. An internal trigger is configurable by software if no specific timing is required. A always high trigger will put the board in continuous counting mode.
@@ -45,7 +45,7 @@ Additional switches SW2 and SW3 allow, respectively, to reset the RP2040 and swi
 ⚠️ **WARNING**: <span style="background-color: #f4ba6880" >The RP2040 is powered from its usb connector AND through the board. To reset the microcontroller disconnect both powers or use the switch SW2.</span>
 
 ### Heating
-Due to the high speed of the MC100EP016A counter the board reaches temperatures of $\approx 55\degree\rm{C}$ in a environment of $\approx 25\degree\rm{C}$ without any significant airflow. This value is inside the maximum operating temperature of the MC100EP016A, however an additional fan can be used and mounted on top of the board, especially if using it in an warm enclosed space (eg power rack).
+Due to the high speed of the MC100EP016A counter the board reaches temperatures of $\approx$ 55 ℃ in a environment of $\approx$ 25 ℃ without any significant airflow. This value is inside the maximum operating temperature of the MC100EP016A, however an additional fan can be used and mounted on top of the board, especially if using it in an warm enclosed space (eg power rack).
 
 ### External RST
 A switch SW1 allows for switching between external and internal reset signals. Reset signals are sent to the MC100EP016A counter to restart the counting from 0. Usually the RP2040 takes care of this and resets the counter at the end of each counting cycle.
@@ -54,7 +54,7 @@ For other applications, however, it is possible to use an external reset signal 
 
 ## 2. Firmware
 
-Using a state-machine on the Pico we can readout the latch at speeds of $\sim 125/2\,\rm{MHz}$. Although the board is clocked at $125\,\rm{MHz}$ the factor $1/2$ comes from two instructions needed for latching the values and for moving the 8 data bits to the internal memory of the Pico.
+Using a state-machine on the Pico we can readout the latch at speeds of $\sim$ 125/2 MHz. Although the board is clocked at 125 MHz the factor 1/2 comes from two instructions needed for latching the values and for moving the 8 data bits to the internal memory of the Pico.
 
 We define an integration time during which the Pico does nothing but waits for the counter to count enough pulses. This wait time is necessary for reducing the ratio between the reinitialization deadtime and the collection time. More of this is described [below](#Example%20of%20deadtime/integration%20ratio).
 
