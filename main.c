@@ -76,18 +76,22 @@ void init_pins()
 
 void print_capture_buf(const uint32_t *buf, uint32_t n_samples, uint32_t n_pins, size_t buf_size_bytes)
 {
-    printf("Acquired Data:\n");
+    //printf("Acquired Data:\r\n");
     // Store data in data array (each 32 bits we have n_pins words of data)
     uint32_t num_words = 32 / n_pins;
-    printf("Buffer length: %d\r\n", buf_size_bytes);
-    printf("---- DATA ----\r\n");
+    //printf("Buffer length: %d\r\n", buf_size_bytes);
+    // Make sure that all data comes in a bunch
+    fflush(stdout);
+    // Print data vector between ---- DATA ---- and ---- END DATA ----
+    printf("||");
     //printf("%.*s", buf_size_bytes, buf);
     //printf("Buffer size: %d, Buffer address: %x", buf_size_bytes, buf);
-    fflush(stdout);
     int outcoume = fwrite(buf, sizeof(uint32_t), buf_size_bytes, stdout);
-    printf("Written: %x", outcoume);
-    printf("---- END DATA ----\r\n");
     fflush(stdout);
+    printf("||\r\n");
+    //printf("Written: %d\r\n", outcoume);
+    fflush(stdout);
+    
     // Old (slow) cout
     //
     /*
@@ -121,7 +125,7 @@ void start_PMT_counter(PIO pio, uint sm, uint dma_chan, uint32_t *capture_buf, s
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, true);
     channel_config_set_dreq(&c, pio_get_dreq(pio, sm, false));
-    printf("Capture words: %d\r\n", capture_size_words);
+    //printf("Capture words: %d\r\n", capture_size_words);
     // Configure the DMA channel
     dma_channel_configure(dma_chan, &c,
                           capture_buf,        // Destination pointer
@@ -156,7 +160,7 @@ bool check_binning_range(int val){
 bool check_exp_time(int val){
     if (!(val >= 0 && val <= 32))
         {
-            printf("ERR: Invalid bin time\r\n");
+            printf("ERR: Invalid bin time. Can only accept values in the range [1-32]\r\n>");
             return false;
         }
     return true;
@@ -164,20 +168,18 @@ bool check_exp_time(int val){
 
 bool process_cmd(uint input_case) {
     uint val;
-    
     switch (input_case) {
     case 0:
         if (0 == strncmp(cmd, "INIT", 4)) {
             return true;
         } else {
-            printf("ERR: Unknown command\r\n");
             return false;
         }
         break;
     case 1:
         // Getting N_SAMPLES
         val = strtol(cmd, NULL, 10);
-        if (check_binning_range(val))
+        if (!check_binning_range(val))
         {
             return false;
         }
@@ -186,7 +188,7 @@ bool process_cmd(uint input_case) {
     case 2:
         // Getting EXP_TIME
         val = strtol(cmd, NULL, 10);
-        if (check_exp_time(val))
+        if (!check_exp_time(val))
         {
             return false;
         }
@@ -203,17 +205,16 @@ bool process_cmd(uint input_case) {
                 return false;
             }
             N_SAMPLES = tmp;
-            printf("NSAMPLES: %d", tmp);
+            //printf("NSAMPLES: %d ,", tmp);
             tmp = atoi(strtok_r(rest, " ", &rest));
             if (!check_exp_time(tmp))
             {
                 return false;
             }
             EXP_TIME = tmp;
-            printf("EXPTIME: %d", tmp); 
+            //printf("EXPTIME: %d ,", tmp); 
             return true;
         } else {
-            printf("ERR: Unknown command\r\n");
             return false;
         }
         break;
@@ -252,29 +253,29 @@ void readCmd(void) {
 }
 
 void read_input_config(uint *N_SAMPLES, uint *EXP_TIME) {
-    //printf("Type INIT to start:\n");
     readCmd();
-    if(process_cmd(3)){ //Speed command, set both N_SAMPLES and EXP_TIME
-        return;
-    }
+    // Wait for INIT/SET command
+    // While the command is not INIT
     while (!process_cmd(0)){
         // Might be a SET command
         if (process_cmd(3)){
             return;
         }
-        printf("Type INIT or SET to start:\r\n");
+        printf("ERR: Unknown command \r\n");
+        printf("Type INIT or \"SET N_SAMPLES EXPTIME\" to start: \r\n");
         readCmd();
     }
-    printf("N of samples:\r\n");
+    // Wait for N_SAMPLES and EXP_TIME
+    printf("N of samples: \r\n");
     readCmd();
     while(!process_cmd(1)){
-        printf("N of samples:\n");
+        printf("N of samples: \r\n");
         readCmd();
     }
-    printf("Bin time (units of 1/125MHz) [0-32]:\r\n");
+    printf("Bin time (units of 1/125MHz) [1-32]: \r\n");
     readCmd();
     while(!process_cmd(2)){
-        printf("Bin time (units of 1/125MHz) [0-32]:\r\n");
+        printf("Bin time (units of 1/125MHz) [1-32]: \r\n");
         readCmd();
     }
 
@@ -288,16 +289,16 @@ int main()
     init_pins();
 
     //Init TinyUSB
-    tusb_init();
+    //tusb_init();
     
 
-    printf("--- PMT counter ---\r\n");
+    printf("<--- PMT counter --->\r\n");
 
     PIO pio = pio0;
     uint sm = 0;
     uint dma_chan = 0;
 
-    uint test = 0;
+    //uint test = 0;
 
     uint offset = pio_add_program(pio, &PMTcounter_program);
 
@@ -311,10 +312,10 @@ int main()
         // Read user settings (EXP_TIME atm not used)
         read_input_config(&N_SAMPLES, &EXP_TIME);
 
-        printf("N_SAMPLES = %d\r\n", N_SAMPLES);
-        printf("EXP_TIME = %d\r\n", EXP_TIME);
+        printf("N_SAMPLES = %d ,", N_SAMPLES);
+        printf("EXP_TIME = %d;", EXP_TIME);
 
-        printf("Allocating memory\r\n");
+        //printf("Allocating memory\r\n>");
         // Allocate memory for the capture buffer
         uint total_sample_bits = N_SAMPLES * CAPTURE_PIN_COUNT;
         total_sample_bits += SHIFT_REG_WIDTH - 1;
@@ -332,22 +333,19 @@ int main()
             printf("ERR: Error in memory allocation, restart the device and report the issue.\r\n");
             exit(0);
         }
-        printf("Set DMA priority\r\n");
-        // Grant high bus priority to the DMA, so it can shove the processors out
-        // of the way. This should only be needed if you are pushing things up to
-        // >16bits/clk here, i.e. if you need to saturate the bus completely.
         bus_ctrl_hw->priority = BUSCTRL_BUS_PRIORITY_DMA_W_BITS | BUSCTRL_BUS_PRIORITY_DMA_R_BITS;
         // Use PIO 0 SM 0
         PMTcounter_program_init(pio, sm, offset, IN_PIN_0, 9, OE, 6, LE, 5, MR, SHIFT_REG_WIDTH, 1.f, EXP_TIME); // 1.f);
         start_PMT_counter(pio, sm, dma_chan, capture_buf, buf_size_words, TRIG, true);
         dma_channel_wait_for_finish_blocking(dma_chan);
         // Disable PIO state machine
-        printf("Run: %d\r\n", test);
+        //printf("Running... %d\r\n", test);
+        // Stop state machine
         pio_sm_set_enabled(pio, sm, false);
         print_capture_buf(capture_buf, buf_size_words, CAPTURE_PIN_COUNT, buf_size_words);
         // Free memory after experiment
         //irq_clear(pio_get_dreq(pio, sm, false));
         free(capture_buf);
-        test++;
+        //test++;
     }
 }

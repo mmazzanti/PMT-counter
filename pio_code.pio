@@ -4,8 +4,8 @@ start:
     set pins, 16    ; Reset(LE-> L, ~CE-> L, TLCD-> L, ~PE->L, MR-> H = 00001)
     set pins, 10    ; Counter hold(LE-> L, ~CE-> H, TLCD-> L, ~PE->H, MR-> L = 01010)
     wait 1 gpio 16  ; wait for PMT trigger (from FPGA)
-    mov Y X         ; load the integration time from the X register
 .wrap_target
+    mov Y X         ; load the integration time from the X register
     set pins, 8     ; Start counter(LE-> L, ~CE-> L, TLCD-> L, ~PE->H, MR-> L = 00010)
     in pins, 8      ; Reads the latch (we use one integration cycle to read the last latched value)
 integrate:
