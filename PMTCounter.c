@@ -3,15 +3,11 @@
 #include <string.h>
 #include <ctype.h>
 
-//Speedup USB data retrieval
-//#include "tusb.h"
-//#include "bsp/board.h"
-
 // PIO and DMA
 #include "pico/stdlib.h"
 #include "hardware/pio.h"
 #include "hardware/clocks.h"
-#include "pio_code.pio.h"
+#include "PMTCounter.pio.h"
 #include "hardware/dma.h"
 #include "hardware/structs/bus_ctrl.h"
 
@@ -49,7 +45,6 @@ uint EXP_TIME = 0;
 void init_pins()
 {
     // Set the direction of the pins
-
     gpio_init(OE);
     gpio_set_dir(OE, GPIO_OUT);
     gpio_put(OE, 0); // Set latch output in high impedance state at booting
@@ -76,38 +71,14 @@ void init_pins()
 
 void print_capture_buf(const uint32_t *buf, uint32_t n_samples, uint32_t n_pins, size_t buf_size_bytes)
 {
-    //printf("Acquired Data:\r\n");
-    // Store data in data array (each 32 bits we have n_pins words of data)
     uint32_t num_words = 32 / n_pins;
-    //printf("Buffer length: %d\r\n", buf_size_bytes);
-    // Make sure that all data comes in a bunch
     fflush(stdout);
-    // Print data vector between ---- DATA ---- and ---- END DATA ----
+    // Print data vector between (||) as || DATA || to make it easier to parse
     printf("||");
-    //printf("%.*s", buf_size_bytes, buf);
-    //printf("Buffer size: %d, Buffer address: %x", buf_size_bytes, buf);
     int outcoume = fwrite(buf, sizeof(uint32_t), buf_size_bytes, stdout);
     fflush(stdout);
     printf("||\r\n");
-    //printf("Written: %d\r\n", outcoume);
     fflush(stdout);
-    
-    // Old (slow) cout
-    //
-    /*
-    for (int sample = 0; sample < n_samples; ++sample)
-    {
-        for (int i = 0; i < num_words; i++)
-        {
-            if (i == 0 && sample == 0)
-            {
-                // Skip first count as it was the previous data (we read the data while integrating the counts)
-                continue;
-            }
-            printf("%d, ",(buf[sample] >> (n_pins * (i))) & 0xff);
-
-        }
-    }*/
 }
 
 void start_PMT_counter(PIO pio, uint sm, uint dma_chan, uint32_t *capture_buf, size_t capture_size_words, uint trigger_pin, bool trigger_level)
@@ -116,7 +87,6 @@ void start_PMT_counter(PIO pio, uint sm, uint dma_chan, uint32_t *capture_buf, s
     pio_sm_set_enabled(pio, sm, false);
     // Need to clear _input shift counter_, as well as FIFO, because there may be
     // partial ISR contents left over from a previous run. sm_restart does this.
-
     pio_sm_clear_fifos(pio, sm);
     pio_sm_restart(pio, sm);
 
@@ -125,7 +95,7 @@ void start_PMT_counter(PIO pio, uint sm, uint dma_chan, uint32_t *capture_buf, s
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, true);
     channel_config_set_dreq(&c, pio_get_dreq(pio, sm, false));
-    //printf("Capture words: %d\r\n", capture_size_words);
+
     // Configure the DMA channel
     dma_channel_configure(dma_chan, &c,
                           capture_buf,        // Destination pointer
@@ -158,7 +128,9 @@ bool check_binning_range(int val){
 }
 
 bool check_exp_time(int val){
-    if (!(val >= 0 && val <= 32))
+    // Max value in the X register is 2^32 although that will imply a integration time of 34s (2^32/125MHz)
+    // I'm not sure the board would work fine in these conditions... needs testing
+    if (!(val >= 0 && val <= 2^32))
         {
             printf("ERR: Invalid bin time. Can only accept values in the range [1-32]\r\n>");
             return false;
@@ -288,34 +260,27 @@ int main()
     stdio_set_translate_crlf(&stdio_usb, false);
     init_pins();
 
-    //Init TinyUSB
-    //tusb_init();
-    
-
     printf("<--- PMT counter --->\r\n");
 
     PIO pio = pio0;
     uint sm = 0;
     uint dma_chan = 0;
 
-    //uint test = 0;
-
     uint offset = pio_add_program(pio, &PMTcounter_program);
 
-    // DEBUG: Slow down board for debugging
-    //float div = (float)clock_get_hz(clk_sys) / 1000000;
+    // Set the clock divider to whatever is needed
+    // int freq = 500e3;
+    // float div = (float)clock_get_hz(clk_sys) / freq;
 
     // Beginning of the experiment
     while (true)
     {
-        //int dma_chan = dma_claim_unused_channel(true);
         // Read user settings (EXP_TIME atm not used)
         read_input_config(&N_SAMPLES, &EXP_TIME);
 
         printf("N_SAMPLES = %d ,", N_SAMPLES);
         printf("EXP_TIME = %d;", EXP_TIME);
 
-        //printf("Allocating memory\r\n>");
         // Allocate memory for the capture buffer
         uint total_sample_bits = N_SAMPLES * CAPTURE_PIN_COUNT;
         total_sample_bits += SHIFT_REG_WIDTH - 1;
@@ -338,14 +303,10 @@ int main()
         PMTcounter_program_init(pio, sm, offset, IN_PIN_0, 9, OE, 6, LE, 5, MR, SHIFT_REG_WIDTH, 1.f, EXP_TIME); // 1.f);
         start_PMT_counter(pio, sm, dma_chan, capture_buf, buf_size_words, TRIG, true);
         dma_channel_wait_for_finish_blocking(dma_chan);
-        // Disable PIO state machine
-        //printf("Running... %d\r\n", test);
         // Stop state machine
         pio_sm_set_enabled(pio, sm, false);
         print_capture_buf(capture_buf, buf_size_words, CAPTURE_PIN_COUNT, buf_size_words);
         // Free memory after experiment
-        //irq_clear(pio_get_dreq(pio, sm, false));
         free(capture_buf);
-        //test++;
     }
 }
