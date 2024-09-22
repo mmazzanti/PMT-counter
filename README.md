@@ -111,8 +111,8 @@ start:
     set pins, 16    ; Reset(LE-> L, ~CE-> L, TLCD-> L, ~PE->L, MR-> H = 00001)
     set pins, 10    ; Counter hold(LE-> L, ~CE-> H, TLCD-> L, ~PE->H, MR-> L = 01010)
     wait 1 gpio 16  ; wait for PMT trigger (from FPGA)
-    mov Y X         ; load the integration time from the X register
 .wrap_target
+    mov Y X         ; load the integration time from the X register
     set pins, 8     ; Start counter(LE-> L, ~CE-> L, TLCD-> L, ~PE->H, MR-> L = 00010)
     in pins, 8      ; Reads the latch (we use one integration cycle to read the last latched value)
 integrate:
@@ -129,11 +129,22 @@ integrate:
     nop [7]             ; Keeps integrating
     jmp y-- integrate   ; as long as user requests (units of 7 clocks)
 ```
-The user can easily set the number of integration steps [0 - 32] at runtime. However, adjusting to shorter or longer integration times requires fewer or more ```nop``` wait instructions. To achieve this, the PIO code needs to be modified and the project recompiled.
+The user can easily set the number of integration steps [0 - 2^32] at runtime. However, adjusting to shorter or longer integration times requires fewer or more ```nop``` wait instructions. To achieve this, the PIO code needs to be modified and the project recompiled.
 
+The X register size is 32 bits. This means that one could push the integration time to 2^32 = 4294967296. At 125MHz that would mean ~8 ns * 4294967296 = 34.35s. In this case I'm pretty sure
+the counter will overflow and as I did not write a piece of code for it I would advice against it.
 
+In case you are interested in this you could use a second state machine to constantly check the status of TC and COUT and capture every overflow event. The number of total counts will then be
+counts + N_overflow * 255. I might implement this in the future but for now is not on my (imaginary) todo list.
 
-## 3. Production & Assembly
+## 3. Data readout
+
+Data will be returned as an hexadecimal string between the ```||``` delimitators. Notice that most of data will be 0s and the hex ```\00``` will be interpreted as a null character from most of the terminals.
+If you don't see any data coming out of the board that might be the case. 
+
+You can use the python script provided in the "read_sample" folder for an example of a read data function.
+
+## 4. Production & Assembly
 work in progress...
 
 
