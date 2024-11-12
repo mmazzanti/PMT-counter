@@ -25,6 +25,7 @@ This can be done with:
 
 Furthermore, as using hexadecimal encoding led to additional headackes (eg. \x10 means 10 photons or an "Line Feed" character ??) I reverted back to ascii encoding for data readout. This is slow but reliable. A further improvement would would involve using the [TinyUSB](https://github.com/raspberrypi/tinyusb/blob/pico/docs/getting_started.md) library and write a non-serial data redout. However, this would require a solid understanding of USB communication details, which unfortunately I don’t currently have the time to explore in depth.
 
+If you are interested in fast readout of data using hex encoding please have a look at the [fast readout branch](https://github.com/mmazzanti/PMT-counter/tree/fast_data_output). I warn you that the code there will work only with few photons per bin (<10 to avoid the "Line Feed" character). However, using a smart encoding this problem could be circumvented. If you are instead interested in developing a USB interface for data readout please get in touch with me :)
 ## Project files:
 
 - PCB: Contains KiCad design of the PCB board
